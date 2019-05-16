@@ -13,8 +13,6 @@ from homeassistant.helpers.entity import Entity
 
 _LOGGER = logging.getLogger(__name__)
 
-ATTR_ROUTE = 'Route'
-ATTR_ROUTE_NAME = 'Route name'
 ATTR_DUE_IN = 'Due in'
 
 CONF_STOP_ID = 'stopid'
@@ -24,7 +22,7 @@ DEFAULT_NAME = 'Next bus'
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_STOP_ID): cv.string,
-    vol.Optional(CONF_ROUTE): cv.string,
+    vol.Required(CONF_ROUTE): cv.string,
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
 })
 
@@ -32,8 +30,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the Bizkaibus public transport sensor."""
     name = config.get(CONF_NAME)
-    stop = config.get(CONF_STOP_ID)
-    route = config.get(CONF_ROUTE)
+    stop = config[CONF_STOP_ID]
+    route = config[CONF_ROUTE]
 
     data = Bizkaibus(stop, route)
     add_entities([BizkaibusSensor(data, stop, route, name)], True)
@@ -63,7 +61,7 @@ class BizkaibusSensor(Entity):
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement of the sensor."""
-        return 'min'
+        return 'minutes'
 
     def update(self):
         """Get the latest data from the webservice."""
@@ -81,9 +79,7 @@ class Bizkaibus:
         """Initialize the data object."""
         self.stop = stop
         self.route = route
-        self.info = [{ATTR_ROUTE_NAME: 'n/a',
-                      ATTR_ROUTE: self.route,
-                      ATTR_DUE_IN: 'n/a'}]
+        self.info = None
 
     def update(self):
         """Retrieve the information from API."""
