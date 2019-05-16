@@ -1,8 +1,6 @@
 """View to accept incoming websocket connection."""
 import asyncio
 from contextlib import suppress
-from functools import partial
-import json
 import logging
 
 from aiohttp import web, WSMsgType
@@ -11,16 +9,14 @@ import async_timeout
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import callback
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.helpers.json import JSONEncoder
 
 from .const import (
     MAX_PENDING_MSG, CANCELLATION_ERRORS, URL, ERR_UNKNOWN_ERROR,
-    SIGNAL_WEBSOCKET_CONNECTED, SIGNAL_WEBSOCKET_DISCONNECTED)
+    SIGNAL_WEBSOCKET_CONNECTED, SIGNAL_WEBSOCKET_DISCONNECTED,
+    DATA_CONNECTIONS, JSON_DUMP)
 from .auth import AuthPhase, auth_required_message
 from .error import Disconnect
 from .messages import error_message
-
-JSON_DUMP = partial(json.dumps, cls=JSONEncoder, allow_nan=False)
 
 
 class WebsocketAPIView(HomeAssistantView):
@@ -53,14 +49,18 @@ class WebSocketHandler:
     async def _writer(self):
         """Write outgoing messages."""
         # Exceptions if Socket disconnected or cancelled by connection handler
-        with suppress(RuntimeError, *CANCELLATION_ERRORS):
+        with suppress(RuntimeError, ConnectionResetError,
+                      *CANCELLATION_ERRORS):
             while not self.wsock.closed:
                 message = await self._to_write.get()
                 if message is None:
                     break
                 self._logger.debug("Sending %s", message)
                 try:
-                    await self.wsock.send_json(message, dumps=JSON_DUMP)
+                    if isinstance(message, str):
+                        await self.wsock.send_str(message)
+                    else:
+                        await self.wsock.send_json(message, dumps=JSON_DUMP)
                 except (ValueError, TypeError) as err:
                     self._logger.error('Unable to serialize to JSON: %s\n%s',
                                        err, message)
@@ -144,6 +144,8 @@ class WebSocketHandler:
 
             self._logger.debug("Received %s", msg)
             connection = await auth.async_handle(msg)
+            self.hass.data[DATA_CONNECTIONS] = \
+                self.hass.data.get(DATA_CONNECTIONS, 0) + 1
             self.hass.helpers.dispatcher.async_dispatcher_send(
                 SIGNAL_WEBSOCKET_CONNECTED)
 
@@ -196,6 +198,8 @@ class WebSocketHandler:
             else:
                 self._logger.warning("Disconnected: %s", disconnect_warn)
 
+            if connection is not None:
+                self.hass.data[DATA_CONNECTIONS] -= 1
             self.hass.helpers.dispatcher.async_dispatcher_send(
                 SIGNAL_WEBSOCKET_DISCONNECTED)
 
