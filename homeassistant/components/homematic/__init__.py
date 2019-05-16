@@ -2,7 +2,6 @@
 from datetime import timedelta
 from functools import partial
 import logging
-import socket
 
 import voluptuous as vol
 
@@ -13,8 +12,6 @@ from homeassistant.const import (
 from homeassistant.helpers import discovery
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import Entity
-
-REQUIREMENTS = ['pyhomematic==0.1.58']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +27,7 @@ DISCOVER_BINARY_SENSORS = 'homematic.binary_sensor'
 DISCOVER_COVER = 'homematic.cover'
 DISCOVER_CLIMATE = 'homematic.climate'
 DISCOVER_LOCKS = 'homematic.locks'
+DISCOVER_BATTERY = 'homematic.battery'
 
 ATTR_DISCOVER_DEVICES = 'devices'
 ATTR_PARAM = 'param'
@@ -44,6 +42,10 @@ ATTR_TIME = 'time'
 ATTR_UNIQUE_ID = 'unique_id'
 ATTR_PARAMSET_KEY = 'paramset_key'
 ATTR_PARAMSET = 'paramset'
+ATTR_DISCOVERY_TYPE = 'discovery_type'
+ATTR_LOW_BAT = 'LOW_BAT'
+ATTR_LOWBAT = 'LOWBAT'
+
 
 EVENT_KEYPRESS = 'homematic.keypress'
 EVENT_IMPULSE = 'homematic.impulse'
@@ -125,7 +127,8 @@ HM_ATTRIBUTE_SUPPORT = {
     'CURRENT': ['current', {}],
     'VOLTAGE': ['voltage', {}],
     'OPERATING_VOLTAGE': ['voltage', {}],
-    'WORKING': ['working', {0: 'No', 1: 'Yes'}]
+    'WORKING': ['working', {0: 'No', 1: 'Yes'}],
+    'STATE_UNCERTAIN': ['state_uncertain', {}]
 }
 
 HM_PRESS_EVENTS = [
@@ -264,7 +267,7 @@ def setup(hass, config):
     # Create hosts-dictionary for pyhomematic
     for rname, rconfig in conf[CONF_INTERFACES].items():
         remotes[rname] = {
-            'ip': socket.gethostbyname(rconfig.get(CONF_HOST)),
+            'ip': rconfig.get(CONF_HOST),
             'port': rconfig.get(CONF_PORT),
             'path': rconfig.get(CONF_PATH),
             'resolvenames': rconfig.get(CONF_RESOLVENAMES),
@@ -280,7 +283,7 @@ def setup(hass, config):
 
     for sname, sconfig in conf[CONF_HOSTS].items():
         remotes[sname] = {
-            'ip': socket.gethostbyname(sconfig.get(CONF_HOST)),
+            'ip': sconfig.get(CONF_HOST),
             'port': DEFAULT_PORT,
             'username': sconfig.get(CONF_USERNAME),
             'password': sconfig.get(CONF_PASSWORD),
@@ -462,7 +465,8 @@ def _system_callback_handler(hass, config, src, *args):
                     ('binary_sensor', DISCOVER_BINARY_SENSORS),
                     ('sensor', DISCOVER_SENSORS),
                     ('climate', DISCOVER_CLIMATE),
-                    ('lock', DISCOVER_LOCKS)):
+                    ('lock', DISCOVER_LOCKS),
+                    ('binary_sensor', DISCOVER_BATTERY)):
                 # Get all devices of a specific type
                 found_devices = _get_devices(
                     hass, discovery_type, addresses, interface)
@@ -471,7 +475,8 @@ def _system_callback_handler(hass, config, src, *args):
                 # they are setup in HASS and a discovery event is fired
                 if found_devices:
                     discovery.load_platform(hass, component_name, DOMAIN, {
-                        ATTR_DISCOVER_DEVICES: found_devices
+                        ATTR_DISCOVER_DEVICES: found_devices,
+                        ATTR_DISCOVERY_TYPE: discovery_type,
                     }, config)
 
     # Homegear error message
@@ -494,7 +499,8 @@ def _get_devices(hass, discovery_type, keys, interface):
         metadata = {}
 
         # Class not supported by discovery type
-        if class_name not in HM_DEVICE_TYPES[discovery_type]:
+        if discovery_type != DISCOVER_BATTERY and \
+                class_name not in HM_DEVICE_TYPES[discovery_type]:
             continue
 
         # Load metadata needed to generate a parameter list
@@ -502,6 +508,15 @@ def _get_devices(hass, discovery_type, keys, interface):
             metadata.update(device.SENSORNODE)
         elif discovery_type == DISCOVER_BINARY_SENSORS:
             metadata.update(device.BINARYNODE)
+        elif discovery_type == DISCOVER_BATTERY:
+            if ATTR_LOWBAT in device.ATTRIBUTENODE:
+                metadata.update(
+                    {ATTR_LOWBAT: device.ATTRIBUTENODE[ATTR_LOWBAT]})
+            elif ATTR_LOW_BAT in device.ATTRIBUTENODE:
+                metadata.update(
+                    {ATTR_LOW_BAT: device.ATTRIBUTENODE[ATTR_LOW_BAT]})
+            else:
+                continue
         else:
             metadata.update({None: device.ELEMENT})
 

@@ -6,8 +6,10 @@ import os
 import voluptuous as vol
 
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
-from homeassistant.components.device_tracker import (
-    PLATFORM_SCHEMA, DOMAIN, ATTR_ATTRIBUTES, ENTITY_ID_FORMAT, DeviceScanner)
+from homeassistant.components.device_tracker import PLATFORM_SCHEMA
+from homeassistant.components.device_tracker.const import (
+    DOMAIN, ATTR_ATTRIBUTES, ENTITY_ID_FORMAT)
+from homeassistant.components.device_tracker.legacy import DeviceScanner
 from homeassistant.components.zone.zone import active_zone
 from homeassistant.helpers.event import track_utc_time_change
 import homeassistant.helpers.config_validation as cv
@@ -16,8 +18,6 @@ import homeassistant.util.dt as dt_util
 from homeassistant.util.location import distance
 
 _LOGGER = logging.getLogger(__name__)
-
-REQUIREMENTS = ['pyicloud==0.9.1']
 
 CONF_ACCOUNTNAME = 'account_name'
 CONF_MAX_INTERVAL = 'max_interval'

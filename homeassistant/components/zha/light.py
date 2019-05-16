@@ -17,8 +17,6 @@ from .entity import ZhaEntity
 
 _LOGGER = logging.getLogger(__name__)
 
-DEPENDENCIES = ['zha']
-
 DEFAULT_DURATION = 5
 
 CAPABILITIES_COLOR_XY = 0x08
@@ -26,6 +24,7 @@ CAPABILITIES_COLOR_TEMP = 0x10
 
 UNSUPPORTED_ATTRIBUTE = 0x86
 SCAN_INTERVAL = timedelta(minutes=60)
+PARALLEL_UPDATES = 5
 
 
 async def async_setup_platform(hass, config, async_add_entities,

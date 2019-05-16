@@ -84,5 +84,5 @@ class Bizkaibus:
     def update(self):
         """Retrieve the information from API."""
         bridge = BizkaibusData(self.stop, self.route)
-        bridge.getNextBus(False, True)
+        bridge.getNextBus()
         self.info = bridge.info

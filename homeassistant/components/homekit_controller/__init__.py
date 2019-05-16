@@ -1,24 +1,17 @@
 """Support for Homekit device discovery."""
 import logging
 
-from homeassistant.components.discovery import SERVICE_HOMEKIT
-from homeassistant.helpers import discovery
 from homeassistant.helpers.entity import Entity
+from homeassistant.exceptions import ConfigEntryNotReady
 
-from .config_flow import load_old_pairings
+# We need an import from .config_flow, without it .config_flow is never loaded.
+from .config_flow import HomekitControllerFlowHandler  # noqa: F401
 from .connection import get_accessory_information, HKDevice
 from .const import (
-    CONTROLLER, KNOWN_DEVICES
+    CONTROLLER, ENTITY_MAP, KNOWN_DEVICES
 )
 from .const import DOMAIN   # noqa: pylint: disable=unused-import
-
-REQUIREMENTS = ['homekit[IP]==0.13.0']
-
-HOMEKIT_IGNORE = [
-    'BSB002',
-    'Home Assistant Bridge',
-    'TRADFRI gateway',
-]
+from .storage import EntityMapStorage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +39,7 @@ class HomeKitEntity(Entity):
         # pylint: disable=import-error
         from homekit.model.characteristics import CharacteristicsTypes
 
-        pairing_data = self._accessory.pairing.pairing_data
+        accessories = self._accessory.accessories
 
         get_uuid = CharacteristicsTypes.get_uuid
         characteristic_types = [
@@ -57,7 +50,7 @@ class HomeKitEntity(Entity):
         self._chars = {}
         self._char_names = {}
 
-        for accessory in pairing_data.get('accessories', []):
+        for accessory in accessories:
             if accessory['aid'] != self._aid:
                 continue
             self._accessory_info = get_accessory_information(accessory)
@@ -151,48 +144,33 @@ class HomeKitEntity(Entity):
         raise NotImplementedError
 
 
-def setup(hass, config):
+async def async_setup_entry(hass, entry):
+    """Set up a HomeKit connection on a config entry."""
+    conn = HKDevice(hass, entry, entry.data)
+    hass.data[KNOWN_DEVICES][conn.unique_id] = conn
+
+    if not await conn.async_setup():
+        del hass.data[KNOWN_DEVICES][conn.unique_id]
+        raise ConfigEntryNotReady
+
+    return True
+
+
+async def async_setup(hass, config):
     """Set up for Homekit devices."""
     # pylint: disable=import-error
     import homekit
-    from homekit.controller.ip_implementation import IpPairing
 
-    hass.data[CONTROLLER] = controller = homekit.Controller()
+    map_storage = hass.data[ENTITY_MAP] = EntityMapStorage(hass)
+    await map_storage.async_initialize()
 
-    for hkid, pairing_data in load_old_pairings(hass).items():
-        controller.pairings[hkid] = IpPairing(pairing_data)
-
-    def discovery_dispatch(service, discovery_info):
-        """Dispatcher for Homekit discovery events."""
-        # model, id
-        host = discovery_info['host']
-        port = discovery_info['port']
-
-        # Fold property keys to lower case, making them effectively
-        # case-insensitive. Some HomeKit devices capitalize them.
-        properties = {
-            key.lower(): value
-            for (key, value) in discovery_info['properties'].items()
-        }
-
-        model = properties['md']
-        hkid = properties['id']
-        config_num = int(properties['c#'])
-
-        if model in HOMEKIT_IGNORE:
-            return
-
-        # Only register a device once, but rescan if the config has changed
-        if hkid in hass.data[KNOWN_DEVICES]:
-            device = hass.data[KNOWN_DEVICES][hkid]
-            if config_num > device.config_num and \
-               device.pairing_info is not None:
-                device.accessory_setup()
-            return
-
-        _LOGGER.debug('Discovered unique device %s', hkid)
-        HKDevice(hass, host, port, model, hkid, config_num, config)
-
+    hass.data[CONTROLLER] = homekit.Controller()
     hass.data[KNOWN_DEVICES] = {}
-    discovery.listen(hass, SERVICE_HOMEKIT, discovery_dispatch)
+
     return True
+
+
+async def async_remove_entry(hass, entry):
+    """Cleanup caches before removing config entry."""
+    hkid = entry.data['AccessoryPairingID']
+    hass.data[ENTITY_MAP].async_delete_map(hkid)
