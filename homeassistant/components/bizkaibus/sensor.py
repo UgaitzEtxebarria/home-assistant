@@ -1,4 +1,3 @@
-
 """Support for Bizkaibus, Biscay (Basque Country, Spain) Bus service."""
 
 import logging
@@ -89,5 +88,5 @@ class Bizkaibus:
     def update(self):
         """Retrieve the information from API."""
         bridge = BizkaibusData(self.stop, self.route)
-        bridge.getNextBus()
+        bridge.getNextBus(False, True)
         self.info = bridge.info
